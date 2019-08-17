@@ -930,5 +930,60 @@ class HistoryWrapperTest(absltest.TestCase):
     self.assertEqual([5, 6, 7], time_step.observation['action'].tolist())
 
 
+class CustomMultiDiscretePyEnv(py_environment.PyEnvironment):
+  def __init__(self):
+    super(CustomMultiDiscretePyEnv, self).__init__()
+    self._position = np.array([0, 0], dtype=np.int32)
+
+  def _reset(self):
+    self._position = np.array([0, 0], dtype=np.int32)
+    return ts.restart(self._position.copy())
+
+  def observation_spec(self):
+    return array_spec.BoundedArraySpec(shape=(2, 2), dtype=np.int32, minimum=0, maximum=1)
+
+  def action_spec(self):
+    return array_spec.BoundedArraySpec(shape=(2, 2), dtype=np.int32, minimum=0, maximum=1)
+
+  def _step(self, action):
+    self._position += action
+    if self._position[0] + self._position[1] < 2:
+      return ts.transition(self._position.copy(), 1)
+    return ts.termination(self._position.copy(), 1)
+
+
+class MultiDiscreteToDiscreteWrapperTest(absltest.TestCase):
+
+  def test_new_action_spec_shape(self):
+    env = CustomMultiDiscretePyEnv()
+    wrapped_env = wrappers.MultiDiscreteToDiscreteWrapper(env)
+    self.assertEqual((4, ), wrapped_env.action_spec().shape)
+
+  def test_new_and_old_actions_have_one_to_one_correspondence(self):
+    env = CustomMultiDiscretePyEnv()
+    wrapped_env = wrappers.MultiDiscreteToDiscreteWrapper(CustomMultiDiscretePyEnv())
+    ts = env.step((0, 0))
+    wrapped_ts = wrapped_env.step(0)
+    self.assertEqual(ts.observation.tolist(), wrapped_ts.observation.tolist())
+
+    env = CustomMultiDiscretePyEnv()
+    wrapped_env = wrappers.MultiDiscreteToDiscreteWrapper(CustomMultiDiscretePyEnv())
+    ts = env.step((0, 1))
+    wrapped_ts = wrapped_env.step(1)
+    self.assertEqual(ts.observation.tolist(), wrapped_ts.observation.tolist())
+
+    env = CustomMultiDiscretePyEnv()
+    wrapped_env = wrappers.MultiDiscreteToDiscreteWrapper(CustomMultiDiscretePyEnv())
+    ts = env.step((1, 0))
+    wrapped_ts = wrapped_env.step(2)
+    self.assertEqual(ts.observation.tolist(), wrapped_ts.observation.tolist())
+
+    env = CustomMultiDiscretePyEnv()
+    wrapped_env = wrappers.MultiDiscreteToDiscreteWrapper(CustomMultiDiscretePyEnv())
+    ts = env.step((1, 1))
+    wrapped_ts = wrapped_env.step(3)
+    self.assertEqual(ts.observation.tolist(), wrapped_ts.observation.tolist())
+
+
 if __name__ == '__main__':
   absltest.main()
