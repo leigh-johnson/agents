@@ -25,6 +25,7 @@ from __future__ import print_function
 
 import abc
 import collections
+from functools import partial
 import gin
 import numpy as np
 import six
@@ -743,12 +744,31 @@ class MultiDiscreteToDiscreteWrapper(PyEnvironmentBaseWrapper):
     """
     super(MultiDiscreteToDiscreteWrapper, self).__init__(env)
 
-    self._multidiscrete_spec = env.action_spec()
+    multidiscrete_spec = env.action_spec()
+    self._multidiscrete_spec = multidiscrete_spec
+
+    dtype = env.action_spec().dtype.as_numpy_dtype if isinstance(env.action_spec().dtype, tf.dtypes.DType) else env.action_spec().dtype
+
+    meshgrid_args = tuple(range(multidiscrete_spec.minimum, i+1) for i in multidiscrete_spec.maximum)
+
+
+    discrete_combinations = np.array(np.meshgrid(
+      *meshgrid_args
+      )).T
+
+    self._discrete_map = discrete_combinations.reshape(
+      discrete_combinations.size//np.prod(multidiscrete_spec.shape),
+      np.prod(multidiscrete_spec.shape)
+    )
+
+
+    #self._multidiscrete_map = 
     self._discrete_spec = array_spec.BoundedArraySpec(
-      shape=(np.prod(env.action_spec().shape),),
-      dtype=env.action_spec().dtype,
+      shape=tf.TensorShape((1,)),
+      dtype=dtype,
       minimum=0,
-      maximum=np.prod(env.action_spec().shape),
+      maximum=len(self._discrete_map),
+
     )
 
   def _discrete_to_multidiscrete(self, discrete_action):
@@ -759,12 +779,8 @@ class MultiDiscreteToDiscreteWrapper(PyEnvironmentBaseWrapper):
     Args:
       discrete_action: Discrete action given to the wrapped env.
     """
-    reversed_action = []
-    for dim in reversed(self._multidiscrete_spec.shape):
-      reversed_action.append(discrete_action % dim)
-      discrete_action = (discrete_action - discrete_action % dim) // dim
 
-    return reversed_action[::-1]
+    return self._discrete_map[discrete_action[0]-1]
 
   def _step(self, action):
     return self._env.step(self._discrete_to_multidiscrete(action))
